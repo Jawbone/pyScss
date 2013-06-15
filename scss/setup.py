@@ -1,8 +1,8 @@
 from distutils.core import setup, Extension
 
-setup(name='pyScss',
+setup(name='jawbonePyScss',
     version='1.1.1',
-    description='pyScss',
+    description='jawbonePyScss',
     ext_modules=[
         Extension(
             '_scss',

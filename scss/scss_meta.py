@@ -48,13 +48,13 @@ VERSION_INFO = (1, 1, 5)
 DATE_INFO = (2013, 2, 15)  # YEAR, MONTH, DAY
 VERSION = '.'.join(str(i) for i in VERSION_INFO)
 REVISION = '%04d%02d%02d' % DATE_INFO
-BUILD_INFO = "pyScss v" + VERSION + " (" + REVISION + ")"
+BUILD_INFO = "jawbonePyScss v" + VERSION + " (" + REVISION + ")"
 AUTHOR = "German M. Bravo (Kronuz)"
 AUTHOR_EMAIL = 'german.mb@gmail.com'
-URL = 'http://github.com/Kronuz/pyScss'
-DOWNLOAD_URL = 'http://github.com/Kronuz/pyScss/tarball/v' + VERSION
+URL = 'http://github.com/Jawbone/pyScss'
+DOWNLOAD_URL = 'https://github.com/Jawbone/pyScss/tarball/jawbone-v' + VERSION
 LICENSE = "MIT"
-PROJECT = "pyScss"
+PROJECT = "jawbonePyScss"
 
 if __name__ == "__main__":
     print('VERSION      = ' + VERSION)
