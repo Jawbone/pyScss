@@ -76,6 +76,49 @@ except ImportError:
 
 profiling = {}
 
+# units and conversions
+_units = ['em', 'ex', 'px', 'cm', 'mm', 'in', 'pt', 'pc', 'deg', 'rad'
+          'grad', 'ms', 's', 'hz', 'khz', '%']
+_zero_units = ['em', 'ex', 'px', 'cm', 'mm', 'in', 'pt', 'pc']  # units that can be zeroed
+_units_weights = {
+    'em': 10,
+    'mm': 10,
+    'ms': 10,
+    'hz': 10,
+    '%': 100,
+}
+_conv = {
+    'size': {
+        'em': 13.0,
+        'px': 1.0
+    },
+    'length': {
+        'mm':  1.0,
+        'cm':  10.0,
+        'in':  25.4,
+        'pt':  25.4 / 72,
+        'pc':  25.4 / 6
+    },
+    'time': {
+        'ms':  1.0,
+        's':   1000.0
+    },
+    'freq': {
+        'hz':  1.0,
+        'khz': 1000.0
+    },
+    'any': {
+        '%': 1.0 / 100
+    }
+}
+_conv_type = {}
+_conv_factor = {}
+for t, m in _conv.items():
+    for k, f in m.items():
+        _conv_type[k] = t
+        _conv_factor[k] = f
+del t, m, k, f
+
 # color literals
 _colors = {
     'aliceblue': '#f0f8ff',
@@ -220,50 +263,6 @@ _colors = {
     'yellowgreen': '#9acd32'
 }
 
-_units_weights = {
-    'em': 10,
-    'mm': 10,
-    'ms': 10,
-    'hz': 10,
-    '%': 100,
-}
-_conv = {
-    'size': {
-        'em': 13.0,
-        'px': 1.0
-    },
-    'length': {
-        'mm':  1.0,
-        'cm':  10.0,
-        'in':  25.4,
-        'pt':  25.4 / 72,
-        'pc':  25.4 / 6
-    },
-    'time': {
-        'ms':  1.0,
-        's':   1000.0
-    },
-    'freq': {
-        'hz':  1.0,
-        'khz': 1000.0
-    },
-    'any': {
-        '%': 1.0 / 100
-    }
-}
-
-# units and conversions
-_units = ['em', 'ex', 'px', 'cm', 'mm', 'in', 'pt', 'pc', 'deg', 'rad'
-          'grad', 'ms', 's', 'hz', 'khz', '%']
-_zero_units = ['em', 'ex', 'px', 'cm', 'mm', 'in', 'pt', 'pc']  # units that can be zeroed
-_conv_type = {}
-_conv_factor = {}
-for t, m in _conv.items():
-    for k, f in m.items():
-        _conv_type[k] = t
-        _conv_factor[k] = f
-del t, m, k, f
-
 _safe_strings = {
     '^doubleslash^': '//',
     '^bigcopen^': '/*',
@@ -314,8 +313,6 @@ _default_scss_opts = {
     'reverse_colors': 0,  # Gets the shortest name of all for colors
 }
 
-_default_search_paths = ['.']
-
 SEPARATOR = '\x00'
 _nl_re = re.compile(r'[ \t\r\f\v]*\n[ \t\r\f\v]*', re.MULTILINE)
 _nl_num_re = re.compile(r'\n.+' + SEPARATOR, re.MULTILINE)
@@ -348,11 +345,11 @@ _zero_units_re = re.compile(r'\b0(' + '|'.join(map(re.escape, _zero_units)) + r'
 _zero_re = re.compile(r'\b0\.(?=\d)')
 
 _escape_chars_re = re.compile(r'([^-a-zA-Z0-9_])')
+_variable_re = re.compile('^\\$[-a-zA-Z0-9_]+$')
 _interpolate_re = re.compile(r'(#\{\s*)?(\$[-\w]+)(?(1)\s*\})')
 _spaces_re = re.compile(r'\s+')
 _expand_rules_space_re = re.compile(r'\s*{')
 _collapse_properties_space_re = re.compile(r'([:#])\s*{')
-_variable_re = re.compile('^\\$[-a-zA-Z0-9_]+$')
 _undefined_re = re.compile('^(?:\\$[-a-zA-Z0-9_]+|undefined)$')
 
 _strings_re = re.compile(r'([\'"]).*?\1')
@@ -389,7 +386,6 @@ _has_code_re = re.compile('''
     )
 ''', re.VERBOSE)
 
-# Known function names
 FUNCTIONS_CSS2 = 'attr counter counters url rgb rect'
 ## CSS3
 FUNCTIONS_UNITS = 'calc min max cycle'  # http://www.w3.org/TR/css3-values/
@@ -413,7 +409,7 @@ FUNCTIONS_OTHERS = 'from to color-stop mask'
 VENDORS = '-[^-]+-.+'
 
 _css_functions_re = re.compile(r'^(%s)$' % (
-    '|'.join(set(' '.join([
+    '|'.join(' '.join([
         FUNCTIONS_CSS2,
         FUNCTIONS_UNITS,
         FUNCTIONS_COLORS,
@@ -426,7 +422,7 @@ _css_functions_re = re.compile(r'^(%s)$' % (
         FUNCTIONS_FILTER,
         FUNCTIONS_OTHERS,
         VENDORS,
-    ]).split()))))
+    ]).split())))
 
 FILEID = 0
 POSITION = 1
@@ -560,132 +556,130 @@ def depar(s):
 ################################################################################
 # Scanner
 
-def _strip_selprop(selprop, lineno):
-    # Get the line number of the selector or property and strip all other
-    # line numbers that might still be there (from multiline selectors)
-    _lineno, _sep, selprop = selprop.partition(SEPARATOR)
-    if _sep == SEPARATOR:
-        _lineno = _lineno.strip(' \t\n;')
-        try:
-            lineno = int(_lineno)
-        except ValueError:
-            pass
-    else:
-        selprop = _lineno
-    selprop = _nl_num_re.sub('\n', selprop)
-    selprop = selprop.strip()
-    return selprop, lineno
+if locate_blocks is None:
+    def _strip_selprop(selprop, lineno):
+        # Get the line number of the selector or property and strip all other
+        # line numbers that might still be there (from multiline selectors)
+        _lineno, _sep, selprop = selprop.partition(SEPARATOR)
+        if _sep == SEPARATOR:
+            _lineno = _lineno.strip(' \t\n;')
+            try:
+                lineno = int(_lineno)
+            except ValueError:
+                pass
+        else:
+            selprop = _lineno
+        selprop = _nl_num_re.sub('\n', selprop)
+        selprop = selprop.strip()
+        return selprop, lineno
 
-def _strip(selprop):
-    # Strip all line numbers, ignoring them in the way
-    selprop, _ = _strip_selprop(selprop, None)
-    return selprop
+    def _strip(selprop):
+        # Strip all line numbers, ignoring them in the way
+        selprop, _ = _strip_selprop(selprop, None)
+        return selprop
 
-def _locate_blocks(codestr):
-    """
-    For processing CSS like strings.
+    def locate_blocks(codestr):
+        """
+        For processing CSS like strings.
 
-    Either returns all selectors (that can be "smart" multi-lined, as
-    long as it's joined by `,`, or enclosed in `(` and `)`) with its code block
-    (the one between `{` and `}`, which can be nested), or the "lose" code
-    (properties) that doesn't have any blocks.
+        Either returns all selectors (that can be "smart" multi-lined, as
+        long as it's joined by `,`, or enclosed in `(` and `)`) with its code block
+        (the one between `{` and `}`, which can be nested), or the "lose" code
+        (properties) that doesn't have any blocks.
 
-    threshold is the number of blank lines before selectors are broken into
-    pieces (properties).
-    """
-    lineno = 0
+        threshold is the number of blank lines before selectors are broken into
+        pieces (properties).
+        """
+        lineno = 0
 
-    par = 0
-    instr = None
-    depth = 0
-    skip = False
-    thin = None
-    i = init = safe = lose = 0
-    start = end = None
+        par = 0
+        instr = None
+        depth = 0
+        skip = False
+        thin = None
+        i = init = safe = lose = 0
+        start = end = None
 
-    for m in _blocks_re.finditer(codestr):
-        i = m.start(0)
-        c = codestr[i]
-        if instr is not None:
-            if c == instr:
-                instr = None  # A string ends (FIXME: needs to accept escaped characters)
-        elif c in ('"', "'"):
-            instr = c  # A string starts
-        elif c == '(':  # parenthesis begins:
-            par += 1
-            thin = None
-            safe = i + 1
-        elif c == ')':  # parenthesis ends:
-            par -= 1
-        elif not par and not instr:
-            if c == '{':  # block begins:
-                if depth == 0:
-                    if i > 0 and codestr[i - 1] == '#':  # Do not process #{...} as blocks!
-                        skip = True
-                    else:
-                        start = i
-                        if thin is not None and _strip(codestr[thin:i]):
-                            init = thin
+        for m in _blocks_re.finditer(codestr):
+            i = m.start(0)
+            c = codestr[i]
+            if instr is not None:
+                if c == instr:
+                    instr = None  # A string ends (FIXME: needs to accept escaped characters)
+            elif c in ('"', "'"):
+                instr = c  # A string starts
+            elif c == '(':  # parenthesis begins:
+                par += 1
+                thin = None
+                safe = i + 1
+            elif c == ')':  # parenthesis ends:
+                par -= 1
+            elif not par and not instr:
+                if c == '{':  # block begins:
+                    if depth == 0:
+                        if i > 0 and codestr[i - 1] == '#':  # Do not process #{...} as blocks!
+                            skip = True
+                        else:
+                            start = i
+                            if thin is not None and _strip(codestr[thin:i]):
+                                init = thin
+                            if lose < init:
+                                _property, lineno = _strip_selprop(codestr[lose:init], lineno)
+                                if _property:
+                                    yield lineno, _property, None
+                                lose = init
+                            thin = None
+                    depth += 1
+                elif c == '}':  # block ends:
+                    if depth > 0:
+                        depth -= 1
+                        if depth == 0:
+                            if not skip:
+                                end = i
+                                _selectors, lineno = _strip_selprop(codestr[init:start], lineno)
+                                _codestr = codestr[start + 1:end].strip()
+                                if _selectors:
+                                    yield lineno, _selectors, _codestr
+                                init = safe = lose = end + 1
+                                thin = None
+                            skip = False
+                elif depth == 0:
+                    if c == ';':  # End of property (or block):
+                        init = i
                         if lose < init:
                             _property, lineno = _strip_selprop(codestr[lose:init], lineno)
                             if _property:
                                 yield lineno, _property, None
-                            lose = init
+                            init = safe = lose = i + 1
                         thin = None
-                depth += 1
-            elif c == '}':  # block ends:
-                if depth > 0:
-                    depth -= 1
-                    if depth == 0:
-                        if not skip:
-                            end = i
-                            _selectors, lineno = _strip_selprop(codestr[init:start], lineno)
-                            _codestr = codestr[start + 1:end].strip()
-                            if _selectors:
-                                yield lineno, _selectors, _codestr
-                            init = safe = lose = end + 1
-                            thin = None
-                        skip = False
-            elif depth == 0:
-                if c == ';':  # End of property (or block):
-                    init = i
-                    if lose < init:
-                        _property, lineno = _strip_selprop(codestr[lose:init], lineno)
-                        if _property:
-                            yield lineno, _property, None
-                        init = safe = lose = i + 1
-                    thin = None
-                elif c == ',':
-                    if thin is not None and _strip(codestr[thin:i]):
-                        init = thin
-                    thin = None
-                    safe = i + 1
-                elif c == '\n':
-                    if thin is not None and _strip(codestr[thin:i]):
-                        init = thin
-                        thin = i + 1
-                    elif thin is None and _strip(codestr[safe:i]):
-                        thin = i + 1  # Step on thin ice, if it breaks, it breaks here
-    if depth > 0:
-        if not skip:
-            _selectors, lineno = _strip_selprop(codestr[init:start], lineno)
-            _codestr = codestr[start + 1:].strip()
-            if _selectors:
-                yield lineno, _selectors, _codestr
-            if par:
-                raise Exception("Missing closing parenthesis somewhere in block: '%s'" % _selectors)
-            elif instr:
-                raise Exception("Missing closing string somewhere in block: '%s'" % _selectors)
-            else:
-                raise Exception("Block never closed: '%s'" % _selectors)
-    losestr = codestr[lose:]
-    for _property in losestr.split(';'):
-        _property, lineno = _strip_selprop(_property, lineno)
-        if _property:
-            yield lineno, _property, None
-
-if locate_blocks is None:
-    locate_blocks = _locate_blocks
+                    elif c == ',':
+                        if thin is not None and _strip(codestr[thin:i]):
+                            init = thin
+                        thin = None
+                        safe = i + 1
+                    elif c == '\n':
+                        if thin is not None and _strip(codestr[thin:i]):
+                            init = thin
+                            thin = i + 1
+                        elif thin is None and _strip(codestr[safe:i]):
+                            thin = i + 1  # Step on thin ice, if it breaks, it breaks here
+        if depth > 0:
+            if not skip:
+                _selectors, lineno = _strip_selprop(codestr[init:start], lineno)
+                _codestr = codestr[start + 1:].strip()
+                if _selectors:
+                    yield lineno, _selectors, _codestr
+                if par:
+                    raise Exception("Missing closing parenthesis somewhere in block: '%s'" % _selectors)
+                elif instr:
+                    raise Exception("Missing closing string somewhere in block: '%s'" % _selectors)
+                else:
+                    raise Exception("Block never closed: '%s'" % _selectors)
+        losestr = codestr[lose:]
+        for _property in losestr.split(';'):
+            _property, lineno = _strip_selprop(_property, lineno)
+            if _property:
+                yield lineno, _property, None
 
 
 ################################################################################
@@ -695,7 +689,7 @@ class Scss(object):
     # configuration:
     construct = 'self'
 
-    def __init__(self, scss_vars=None, scss_opts=None, scss_files=None, super_selector=None, search_paths=None):
+    def __init__(self, scss_vars=None, scss_opts=None, scss_files=None, super_selector=None):
         if super_selector:
             self.super_selector = super_selector + ' '
         else:
@@ -703,8 +697,6 @@ class Scss(object):
         self._scss_vars = scss_vars
         self._scss_opts = scss_opts
         self._scss_files = scss_files
-        self._search_paths = search_paths
-
         self.reset()
 
     def get_scss_constants(self):
@@ -735,23 +727,6 @@ class Scss(object):
         self.scss_opts = _default_scss_opts.copy()
         if self._scss_opts is not None:
             self.scss_opts.update(self._scss_opts)
-
-        # Figure out search paths.  Fall back from provided explicitly to
-        # defined globally to just searching the current directory
-        self.search_paths = list(_default_search_paths)
-        if self._search_paths is not None:
-            assert not isinstance(self._search_paths, basestring), \
-                "`search_paths` should be an iterable, not a string"
-            self.search_paths.extend(self._search_paths)
-        else:
-            if config.LOAD_PATHS:
-                if isinstance(config.LOAD_PATHS, basestring):
-                    # Back-compat: allow comma-delimited
-                    self.search_paths.extend(config.LOAD_PATHS.split(','))
-                else:
-                    self.search_paths.extend(config.LOAD_PATHS)
-
-            self.search_paths.extend(self.scss_opts.get('load_paths', []))
 
         self.scss_files = {}
         self._scss_files_order = []
@@ -1066,31 +1041,31 @@ class Scss(object):
                     name = self.apply_vars(name, rule[CONTEXT], rule[OPTIONS], rule)
                     p_parents.update(p.strip() for p in name.replace(',', '&').split('&'))
                     p_parents.discard('')
+                elif c_codestr is not None and code in ('@mixin', '@function'):
+                    self._do_functions(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
                 elif code == '@return':
                     ret = self.calculate(name, rule[CONTEXT], rule[OPTIONS], rule)
                     rule[OPTIONS]['@return'] = ret
                 elif code == '@include':
                     self._do_include(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
-                elif c_codestr is None:
-                    rule[PROPERTIES].append((c_lineno, c_property, None))
-                elif code in ('@mixin', '@function'):
-                    self._do_functions(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
-                elif code == '@if' or c_property.startswith('@else if '):
+                elif c_codestr is not None and (code == '@if' or c_property.startswith('@else if ')):
                     self._do_if(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
-                elif code == '@else':
+                elif c_codestr is not None and code == '@else':
                     self._do_else(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
-                elif code == '@for':
+                elif c_codestr is not None and code == '@for':
                     self._do_for(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
-                elif code == '@each':
+                elif c_codestr is not None and code == '@each':
                     self._do_each(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
-                # elif code == '@while':
+                # elif c_codestr is not None and code == '@while':
                 #     self._do_while(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr, code, name)
-                elif code in ('@variables', '@vars'):
+                elif c_codestr is not None and code in ('@variables', '@vars'):
                     self._get_variables(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr)
-                elif code == '@media':
+                elif c_codestr is not None and code == '@media':
                     _media = (media or []) + [name]
                     rule[CODESTR] = self.construct + ' {' + c_codestr + '}'
                     self.manage_children(rule, p_selectors, p_parents, p_children, scope, _media)
+                elif c_codestr is None:
+                    rule[PROPERTIES].append((c_lineno, c_property, None))
                 elif scope is None:  # needs to have no scope to crawl down the nested rules
                     self._nest_rules(rule, p_selectors, p_parents, p_children, scope, media, c_lineno, c_property, c_codestr)
             ####################################################################
@@ -1217,9 +1192,10 @@ class Scss(object):
             value = self.calculate(value, rule[CONTEXT], rule[OPTIONS], rule)
             m_vars[m_param] = value
         for p in m_params:
-            if p not in new_params and isinstance(m_vars[p], basestring):
-                value = self.calculate(m_vars[p], m_vars, rule[OPTIONS], rule)
-                m_vars[p] = value
+            if p not in new_params:
+                if isinstance(m_vars[p], basestring):
+                    value = self.calculate(m_vars[p], m_vars, rule[OPTIONS], rule)
+                    m_vars[p] = value
         _context = rule[CONTEXT].copy()
         _context.update(m_vars)
         _rule = spawn_rule(rule, codestr=m_codestr, context=_context, lineno=c_lineno)
@@ -1261,14 +1237,22 @@ class Scss(object):
             load_paths = []
             filename = os.path.basename(name)
             dirname = os.path.dirname(name)
-
             try:
                 i_codestr = self.scss_files[name]
             except KeyError:
                 i_codestr = None
 
-                for path in self.search_paths:
-                    for basepath in ['.', os.path.dirname(rule[PATH])]:
+                # TODO: Convert global config.LOAD_PATHS to a list. Use it directly.
+                # Doing the above will break backwards compatibility!
+                if hasattr(config.LOAD_PATHS, 'split'):
+                    load_path_list = config.LOAD_PATHS.split(',')  # Old style
+                else:
+                    load_path_list = config.LOAD_PATHS  # New style
+
+                load_path_list.extend(self._scss_opts['load_paths'] if self._scss_opts and 'load_paths' in self._scss_opts else [])
+
+                for path in ['./'] + load_path_list:
+                    for basepath in ['./', os.path.dirname(rule[PATH])]:
                         i_codestr = None
                         full_path = os.path.realpath(os.path.join(path, basepath, dirname))
                         if full_path in load_paths:
@@ -1409,15 +1393,7 @@ class Scss(object):
             val = True
         if val:
             val = self.calculate(name, rule[CONTEXT], rule[OPTIONS], rule)
-            if isinstance(val, (basestring, StringValue)):
-                if val != 'false' and not _undefined_re.match(unicode(val)):
-                    val = True
-                else:
-                    val = False
-            elif isinstance(val, (bool, BooleanValue)):
-                val = bool(val)
-            else:
-                val = True
+            val = bool(False if not val or isinstance(val, basestring) and (val in ('0', 'false', 'undefined') or _variable_re.match(val)) else val)
             if val:
                 rule[CODESTR] = c_codestr
                 self.manage_children(rule, p_selectors, p_parents, p_children, scope, media)
@@ -1790,11 +1766,8 @@ class Scss(object):
         old_media = None
         old_property = None
 
-        textwrap.TextWrapper.wordsep_re = re.compile(r'(?<=,)(\s*)')
-        if hasattr(textwrap.TextWrapper, 'wordsep_simple_re'):
-            wrap = textwrap.TextWrapper(break_long_words=False, break_on_hyphens=False)
-        else:
-            wrap = textwrap.TextWrapper(break_long_words=False)
+        wrap = textwrap.TextWrapper(break_long_words=False, break_on_hyphens=False)
+        wrap.wordsep_re = re.compile(r'(?<=,)(\s*)')
         wrap = wrap.wrap
 
         total_rules = 0
@@ -1914,12 +1887,8 @@ class Scss(object):
 
     def _print_properties(self, properties, scope=None, old_property=None, sc=True, sp=' ', _tb='', nl='\n', wrap=None):
         if wrap is None:
-            textwrap.TextWrapper.wordsep_re = re.compile(r'(?<=,)(\s*)')
-            if hasattr(textwrap.TextWrapper, 'wordsep_simple_re'):
-                wrap = textwrap.TextWrapper(break_long_words=False, break_on_hyphens=False)
-            else:
-                wrap = textwrap.TextWrapper(break_long_words=False)
-            wrap = wrap.wrap
+            wrap = textwrap.TextWrapper(break_long_words=False)
+            wrap.wordsep_re = re.compile(r'(?<=,)(\s*)')
             wrap = wrap.wrap
         if old_property is None:
             old_property = [None]
@@ -2049,6 +2018,14 @@ def to_float(num):
         return float(num[:-1]) / 100.0
     else:
         return float(num)
+
+
+hex2rgba = {
+    9: lambda c: (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16), int(c[7:9], 16)),
+    7: lambda c: (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16), 1.0),
+    5: lambda c: (int(c[1] * 2, 16), int(c[2] * 2, 16), int(c[3] * 2, 16), int(c[4] * 2, 16)),
+    4: lambda c: (int(c[1] * 2, 16), int(c[2] * 2, 16), int(c[3] * 2, 16), 1.0),
+}
 
 
 def escape(s):
@@ -2217,11 +2194,10 @@ def _invert(color):
     The red, green, and blue values are inverted, while the opacity is left alone.
     """
     col = ColorValue(color)
-    c = list(col.value)
+    c = col.value
     c[0] = 255.0 - c[0]
     c[1] = 255.0 - c[1]
     c[2] = 255.0 - c[2]
-    col.value = tuple(c)
     return col
 
 
@@ -2558,8 +2534,6 @@ def _radial_gradient(*args):
     position_and_angle = _get_gradient_position_and_angle(args)
     shape_and_size = _get_gradient_shape_and_size(args)
     color_stops = _get_gradient_color_stops(args)
-    if color_stops is None:
-        raise Exception('No color stops provided to radial-gradient function')
     color_stops = __color_stops(False, *color_stops)
 
     args = [
@@ -2614,8 +2588,6 @@ def _linear_gradient(*args):
 
     position_and_angle = _get_gradient_position_and_angle(args)
     color_stops = _get_gradient_color_stops(args)
-    if color_stops is None:
-        raise Exception('No color stops provided to linear-gradient function')
     color_stops = __color_stops(False, *color_stops)
 
     args = [
@@ -3631,24 +3603,10 @@ def _grad_point(*p):
         vrt = NumberValue(0, '%')
     elif 'bottom' in pos:
         vrt = NumberValue(1, '%')
-    return ListValue([v for v in (hrz, vrt) if v is not None])
+    return ListValue(v for v in (hrz, vrt) if v is not None)
 
 
 ################################################################################
-
-
-def __parse_separator(separator):
-    if separator is None:
-        return None
-    separator = StringValue(separator).value
-    if separator == 'comma':
-        return ','
-    elif separator == 'space':
-        return ' '
-    elif separator == 'auto':
-        return None
-    else:
-        raise ValueError('Separator must be auto, comma, or space')
 
 
 def __compass_list(*args):
@@ -3659,7 +3617,7 @@ def __compass_list(*args):
         separator = ','
     ret = ListValue(args)
     if separator:
-        ret.value['_'] = separator
+        ret['_'] = separator
     return ret
 
 
@@ -3690,32 +3648,14 @@ def _compact(*args):
             args = args.value
         if isinstance(args, dict):
             for i, item in args.items():
-                if isinstance(item, (basestring, StringValue)):
-                    if item != 'false' and not _undefined_re.match(unicode(item)):
-                        ret[i] = item
-                elif isinstance(item, (bool, BooleanValue)):
-                    if bool(item):
-                        ret[i] = item
-                else:
+                if False if isinstance(item, basestring) and _undefined_re.match(item) else bool(item):
                     ret[i] = item
-        elif isinstance(args, (basestring, StringValue)):
-            if args != 'false' and not _undefined_re.match(unicode(args)):
-                ret[0] = args
-        elif isinstance(args, (bool, BooleanValue)):
-            if bool(args):
-                ret[0] = args
-        else:
+        elif False if isinstance(args, basestring) and _undefined_re.match(args) else bool(args):
             ret[0] = args
     else:
         ret['_'] = ','
         for i, item in enumerate(args):
-            if isinstance(item, (basestring, StringValue)):
-                if item != 'false' and not _undefined_re.match(unicode(item)):
-                    ret[i] = item
-            elif isinstance(item, (bool, BooleanValue)):
-                if bool(item):
-                    ret[i] = item
-            else:
+            if False if isinstance(item, basestring) and _undefined_re.match(item) else bool(item):
                 ret[i] = item
     if isinstance(args, ListValue):
         args = args.value
@@ -3736,8 +3676,6 @@ def _reject(lst, *values):
         values = values[0]
         if isinstance(values, ListValue):
             values = values.value.values()
-        elif not isinstance(values, (list, tuple)):
-            values = list(values)
     for i, item in lst.items():
         if item not in values:
             ret[i] = item
@@ -3798,9 +3736,10 @@ def _join(lst1, lst2, separator=None):
     lst2 = ListValue(lst2).value
     lst_len = len(ret.value)
     ret.value.update((k + lst_len if isinstance(k, int) else k, v) for k, v in lst2.items())
-    separator = __parse_separator(separator)
     if separator is not None:
-        ret.value['_'] = separator
+        separator = StringValue(separator).value
+        if separator:
+            ret.value['_'] = separator
     return ret
 
 
@@ -3826,17 +3765,12 @@ def _min(*lst):
 
 
 def _append(lst, val, separator=None):
-    separator = __parse_separator(separator)
+    separator = separator and StringValue(separator).value
     ret = ListValue(lst, separator)
-    ret.value[len(ret)] = val
+    val = ListValue(val)
+    for v in val:
+        ret.value[len(ret)] = v
     return ret
-
-
-def _index(lst, val):
-    for i in xrange(len(lst)):
-        if lst.value[i] == val:
-            return NumberValue(i + 1)
-    return BooleanValue(False)
 
 
 ################################################################################
@@ -4362,8 +4296,12 @@ class NumberValue(Value):
                 raise ValueError("Value is not a Number! (%s)" % tokens)
         elif isinstance(tokens, (int, float)):
             self.value = float(tokens)
+        elif isinstance(tokens, (list, tuple)):
+            raise ValueError("Value is not a Number! (%r)" % list(tokens))
+        elif isinstance(tokens, (dict, ListValue)):
+            raise ValueError("Value is not a Number! (%r)" % tokens.values())
         else:
-            raise ValueError("Can't convert to CSS number: %r" % tokens)
+            raise ValueError("Value is not a Number! (%s)" % tokens)
         if type is not None:
             self.units = {type: _units_weights.get(type, 1), '_': type}
 
@@ -4460,10 +4398,6 @@ class NumberValue(Value):
                 first.value /= 100.0
             elif second_unit == '%' and first_unit != '%':
                 second = NumberValue(first) * second.value
-        elif op == operator.__div__:
-            if first_unit and first_unit == second_unit:
-                first.units = {}
-                second.units = {}
 
         val = op(first.value, second.value)
 
@@ -4601,7 +4535,7 @@ class ListValue(Value):
         return zip(*self.items())[1]
 
     def keys(self):
-        return zip(*self.items())[0]
+        return zip(*self.items())[1]
 
     def items(self):
         return sorted((k, v) for k, v in self.value.items() if k != '_')
@@ -4616,13 +4550,6 @@ class ListValue(Value):
 
 
 class ColorValue(Value):
-    HEX2RGBA = {
-        9: lambda c: (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16), int(c[7:9], 16)),
-        7: lambda c: (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16), 1.0),
-        5: lambda c: (int(c[1] * 2, 16), int(c[2] * 2, 16), int(c[3] * 2, 16), int(c[4] * 2, 16)),
-        4: lambda c: (int(c[1] * 2, 16), int(c[2] * 2, 16), int(c[3] * 2, 16), 1.0),
-    }
-
     def __init__(self, tokens):
         self.tokens = tokens
         self.value = (0, 0, 0, 1)
@@ -4631,7 +4558,7 @@ class ColorValue(Value):
             self.value = (0, 0, 0, 1)
         elif isinstance(tokens, ParserValue):
             hex = tokens.value
-            self.value = self.HEX2RGBA[len(hex)](hex)
+            self.value = hex2rgba[len(hex)](hex)
             self.types = {'rgba': 1}
         elif isinstance(tokens, ColorValue):
             self.value = tokens.value
@@ -4658,7 +4585,7 @@ class ColorValue(Value):
             if _undefined_re.match(tokens):
                 raise ValueError("Value is not a Color! (%s)" % tokens)
             try:
-                self.value = self.HEX2RGBA[len(tokens)](tokens)
+                self.value = hex2rgba[len(tokens)](tokens)
             except:
                 try:
                     val = to_float(tokens)
@@ -5017,7 +4944,6 @@ fnct = {
     '-compass-list-size:n': _length,
     'append:2': _append,
     'append:3': _append,
-    'index:2': _index,
 
     'nest:n': _nest,
     'append-selector:2': _append_selector,
@@ -5058,14 +4984,14 @@ for u in _units:
     fnct[u + ':2'] = _convert_to
 
 
-def interpolate(var, rule):
-    context = rule[CONTEXT]
-    value = context.get(var, var)
-    if var != value and isinstance(value, basestring):
-        _vi = eval_expr(value, rule, True)
+def interpolate(v, R):
+    C, O = R[CONTEXT], R[OPTIONS]
+    vi = C.get(v, v)
+    if v != vi and isinstance(vi, basestring):
+        _vi = eval_expr(vi, R, True)
         if _vi is not None:
-            value = _vi
-    return value
+            vi = _vi
+    return vi
 
 
 def call(name, args, R, is_function=True):
@@ -5101,177 +5027,125 @@ def call(name, args, R, is_function=True):
     return node
 
 
-expr_cache = {}
-def eval_expr(expr, rule, raw=False):
-    # print >>sys.stderr, '>>',expr,'<<'
-    results = None
-
-    if not isinstance(expr, basestring):
-        results = expr
-
-    if results is None:
-        if expr in rule[CONTEXT]:
-            chkd = {}
-            while expr in rule[CONTEXT] and expr not in chkd:
-                chkd[expr] = 1
-                _expr = rule[CONTEXT][expr]
-                if _expr == expr:
-                    break
-                expr = _expr
-        if not isinstance(expr, basestring):
-            results = expr
-
-    if results is None:
-        if expr in expr_cache:
-            results = expr_cache[expr]
-        else:
-            try:
-                P = Calculator(CalculatorScanner())
-                P.reset(expr)
-                results = P.goal(rule)
-            except SyntaxError:
-                if config.DEBUG:
-                    raise
-            except Exception, e:
-                log.exception("Exception raised: %s in `%s' (%s)", e, expr, rule[INDEX][rule[LINENO]])
-                if config.DEBUG:
-                    raise
-
-            # TODO this is a clumsy hack for nondeterministic functions;
-            # something better (and per-compiler rather than global) would be
-            # nice
-            if '$' not in expr and '(' not in expr:
-                expr_cache[expr] = results
-
-    if not raw and results is not None:
-        results = to_str(results)
-
-    # print >>sys.stderr, repr(expr),'==',results,'=='
-    return results
-
-
 ################################################################################
 # Parser
 
-class _NoMoreTokens(Exception):
-    """
-    Another exception object, for when we run out of tokens
-    """
-    pass
-
-class _Scanner(object):
-    def __init__(self, patterns, ignore, input=None):
-        """
-        Patterns is [(terminal,regex)...]
-        Ignore is [terminal,...];
-        Input is a string
-        """
-        self.reset(input)
-        self.ignore = ignore
-        # The stored patterns are a pair (compiled regex,source
-        # regex).  If the patterns variable passed in to the
-        # constructor is None, we assume that the class already has a
-        # proper .patterns list constructed
-        if patterns is not None:
-            self.patterns = []
-            for k, r in patterns:
-                self.patterns.append((k, re.compile(r)))
-
-    def reset(self, input):
-        self.tokens = []
-        self.restrictions = []
-        self.input = input
-        self.pos = 0
-
-    def __repr__(self):
-        """
-        Print the last 10 tokens that have been scanned in
-        """
-        output = ''
-        for t in self.tokens[-10:]:
-            output = "%s\n  (@%s)  %s  =  %s" % (output, t[0], t[2], repr(t[3]))
-        return output
-
-    def _scan(self, restrict):
-        """
-        Should scan another token and add it to the list, self.tokens,
-        and add the restriction to self.restrictions
-        """
-        # Keep looking for a token, ignoring any in self.ignore
-        token = None
-        while True:
-            best_pat = None
-            # Search the patterns for a match, with earlier
-            # tokens in the list having preference
-            best_pat_len = 0
-            for p, regexp in self.patterns:
-                # First check to see if we're restricting to this token
-                if restrict and p not in restrict and p not in self.ignore:
-                    continue
-                m = regexp.match(self.input, self.pos)
-                if m:
-                    # We got a match
-                    best_pat = p
-                    best_pat_len = len(m.group(0))
-                    break
-
-            # If we didn't find anything, raise an error
-            if best_pat is None:
-                msg = "Bad Token"
-                if restrict:
-                    msg = "Trying to find one of " + ", ".join(restrict)
-                raise SyntaxError("SyntaxError[@ char %s: %s]" % (repr(self.pos), msg))
-
-            # If we found something that isn't to be ignored, return it
-            if best_pat in self.ignore:
-                # This token should be ignored...
-                self.pos += best_pat_len
-            else:
-                end_pos = self.pos + best_pat_len
-                # Create a token with this data
-                token = (
-                    self.pos,
-                    end_pos,
-                    best_pat,
-                    self.input[self.pos:end_pos]
-                )
-                break
-        if token is not None:
-            self.pos = token[1]
-            # Only add this token if it's not in the list
-            # (to prevent looping)
-            if not self.tokens or token != self.tokens[-1]:
-                self.tokens.append(token)
-                self.restrictions.append(restrict)
-                return 1
-        return 0
-
-    def token(self, i, restrict=None):
-        """
-        Get the i'th token, and if i is one past the end, then scan
-        for another token; restrict is a list of tokens that
-        are allowed, or 0 for any token.
-        """
-        tokens_len = len(self.tokens)
-        if i == tokens_len:  # We are at the end, get the next...
-            tokens_len += self._scan(restrict)
-        if i < tokens_len:
-            if restrict and self.restrictions[i] and restrict > self.restrictions[i]:
-                raise NotImplementedError("Unimplemented: restriction set changed")
-            return self.tokens[i]
-        raise NoMoreTokens
-
-    def rewind(self, i):
-        tokens_len = len(self.tokens)
-        if i <= tokens_len:
-            token = self.tokens[i]
-            self.tokens = self.tokens[:i]
-            self.restrictions = self.restrictions[:i]
-            self.pos = token[0]
-
 if not Scanner:
-    Scanner = _Scanner
-    NoMoreTokens = _NoMoreTokens
+    class NoMoreTokens(Exception):
+        """
+        Another exception object, for when we run out of tokens
+        """
+        pass
+
+    class Scanner(object):
+        def __init__(self, patterns, ignore, input=None):
+            """
+            Patterns is [(terminal,regex)...]
+            Ignore is [terminal,...];
+            Input is a string
+            """
+            self.reset(input)
+            self.ignore = ignore
+            # The stored patterns are a pair (compiled regex,source
+            # regex).  If the patterns variable passed in to the
+            # constructor is None, we assume that the class already has a
+            # proper .patterns list constructed
+            if patterns is not None:
+                self.patterns = []
+                for k, r in patterns:
+                    self.patterns.append((k, re.compile(r)))
+
+        def reset(self, input):
+            self.tokens = []
+            self.restrictions = []
+            self.input = input
+            self.pos = 0
+
+        def __repr__(self):
+            """
+            Print the last 10 tokens that have been scanned in
+            """
+            output = ''
+            for t in self.tokens[-10:]:
+                output = "%s\n  (@%s)  %s  =  %s" % (output, t[0], t[2], repr(t[3]))
+            return output
+
+        def _scan(self, restrict):
+            """
+            Should scan another token and add it to the list, self.tokens,
+            and add the restriction to self.restrictions
+            """
+            # Keep looking for a token, ignoring any in self.ignore
+            token = None
+            while True:
+                best_pat = None
+                # Search the patterns for a match, with earlier
+                # tokens in the list having preference
+                best_pat_len = 0
+                for p, regexp in self.patterns:
+                    # First check to see if we're restricting to this token
+                    if restrict and p not in restrict and p not in self.ignore:
+                        continue
+                    m = regexp.match(self.input, self.pos)
+                    if m:
+                        # We got a match
+                        best_pat = p
+                        best_pat_len = len(m.group(0))
+                        break
+
+                # If we didn't find anything, raise an error
+                if best_pat is None:
+                    msg = "Bad Token"
+                    if restrict:
+                        msg = "Trying to find one of " + ", ".join(restrict)
+                    raise SyntaxError("SyntaxError[@ char %s: %s]" % (repr(self.pos), msg))
+
+                # If we found something that isn't to be ignored, return it
+                if best_pat in self.ignore:
+                    # This token should be ignored...
+                    self.pos += best_pat_len
+                else:
+                    end_pos = self.pos + best_pat_len
+                    # Create a token with this data
+                    token = (
+                        self.pos,
+                        end_pos,
+                        best_pat,
+                        self.input[self.pos:end_pos]
+                    )
+                    break
+            if token is not None:
+                self.pos = token[1]
+                # Only add this token if it's not in the list
+                # (to prevent looping)
+                if not self.tokens or token != self.tokens[-1]:
+                    self.tokens.append(token)
+                    self.restrictions.append(restrict)
+                    return 1
+            return 0
+
+        def token(self, i, restrict=None):
+            """
+            Get the i'th token, and if i is one past the end, then scan
+            for another token; restrict is a list of tokens that
+            are allowed, or 0 for any token.
+            """
+            tokens_len = len(self.tokens)
+            if i == tokens_len:  # We are at the end, get the next...
+                tokens_len += self._scan(restrict)
+            if i < tokens_len:
+                if restrict and self.restrictions[i] and restrict > self.restrictions[i]:
+                    raise NotImplementedError("Unimplemented: restriction set changed")
+                return self.tokens[i]
+            raise NoMoreTokens
+
+        def rewind(self, i):
+            tokens_len = len(self.tokens)
+            if i <= tokens_len:
+                token = self.tokens[i]
+                self.tokens = self.tokens[:i]
+                self.restrictions = self.restrictions[:i]
+                self.pos = token[0]
 
 
 class CachedScanner(Scanner):
@@ -5628,3 +5502,51 @@ class Calculator(Parser):
 
 ### Grammar ends.
 ################################################################################
+
+expr_cache = {}
+def eval_expr(expr, rule, raw=False):
+    # print >>sys.stderr, '>>',expr,'<<'
+    results = None
+
+    if not isinstance(expr, basestring):
+        results = expr
+
+    if results is None:
+        if expr in rule[CONTEXT]:
+            chkd = {}
+            while expr in rule[CONTEXT] and expr not in chkd:
+                chkd[expr] = 1
+                _expr = rule[CONTEXT][expr]
+                if _expr == expr:
+                    break
+                expr = _expr
+        if not isinstance(expr, basestring):
+            results = expr
+
+    if results is None:
+        if expr in expr_cache:
+            results = expr_cache[expr]
+        else:
+            try:
+                P = Calculator(CalculatorScanner())
+                P.reset(expr)
+                results = P.goal(rule)
+            except SyntaxError:
+                if config.DEBUG:
+                    raise
+            except Exception, e:
+                log.exception("Exception raised: %s in `%s' (%s)", e, expr, rule[INDEX][rule[LINENO]])
+                if config.DEBUG:
+                    raise
+
+            # TODO this is a clumsy hack for nondeterministic functions;
+            # something better (and per-compiler rather than global) would be
+            # nice
+            if '$' not in expr and '(' not in expr:
+                expr_cache[expr] = results
+
+    if not raw and results is not None:
+        results = to_str(results)
+
+    # print >>sys.stderr, repr(expr),'==',results,'=='
+    return results

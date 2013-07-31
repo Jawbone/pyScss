@@ -1,7 +1,7 @@
 from distutils.core import setup, Extension
 
 setup(name='jawbonePyScss',
-    version='1.1.1',
+    version='1.1.5',
     description='jawbonePyScss',
     ext_modules=[
         Extension(
